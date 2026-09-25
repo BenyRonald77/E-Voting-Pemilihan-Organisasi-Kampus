@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite tidak mendukung enum native Prisma, jadi "status" disimpan
+// sebagai String dan divalidasi lewat union type TypeScript (src/lib/types.ts).
+
+model Student {
+  id           String   @id @default(cuid())
+  nim          String   @unique
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  voteRecords VoteRecord[]
+}
+
+model Admin {
+  id           String @id @default(cuid())
+  name         String
+  email        String @unique
+  passwordHash String
+}
+
+model Election {
+  id        String   @id @default(cuid())
+  title     String
+  status    String   @default("DRAFT")
+  startAt   DateTime
+  endAt     DateTime
+  createdAt DateTime @default(now())
+
+  candidates  Candidate[]
+  voteRecords VoteRecord[]
+  ballots     Ballot[]
+  auditLogs   AuditLog[]
+}
+
+model Candidate {
+  id         String   @id @default(cuid())
+  electionId String
+  election   Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  name       String
+  vision     String
+  mission    String
+  photoEmoji String   @default("🧑")
+  voteCount  Int      @default(0)
+
+  ballots Ballot[]
+
+  @@index([electionId])
+}
+
+// Bukti mahasiswa SUDAH memilih - TIDAK menyimpan kandidat pilihannya.
+// UNIQUE constraint inilah yang menjamin satu mahasiswa satu suara.
+model VoteRecord {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    Student  @relation(fields: [studentId], references: [id])
+  electionId String
+  election   Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  votedAt    DateTime @default(now())
+
+  @@unique([studentId, electionId])
+}
+
+// Isi suara anonim - SENGAJA tidak ada kolom/relasi ke Student mana pun.
+model Ballot {
+  id          String    @id @default(cuid())
+  electionId  String
+  election    Election  @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  castAt      DateTime  @default(now())
+
+  @@index([electionId])
+}
+
+// Hash chain audit trail - setiap entri mengunci entri sebelumnya.
+model AuditLog {
+  id         String   @id @default(cuid())
+  electionId String
+  election   Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  action     String
+  details    String
+  prevHash   String
+  hash       String
+  createdAt  DateTime @default(now())
+
+  @@index([electionId, createdAt])
+}
